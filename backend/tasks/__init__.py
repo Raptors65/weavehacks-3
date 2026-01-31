@@ -6,6 +6,7 @@ from tasks.storage import (
     list_tasks,
     update_task_status,
     update_task_github_issue,
+    update_task_fix,
     TASK_PREFIX,
 )
 
@@ -15,6 +16,7 @@ __all__ = [
     "list_tasks",
     "update_task_status",
     "update_task_github_issue",
+    "update_task_fix",
     "TASK_PREFIX",
 ]
 

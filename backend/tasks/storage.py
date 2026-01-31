@@ -27,6 +27,9 @@ TASK_FIELDS = [
     "status",
     "github_issue_url",
     "github_issue_number",
+    "fix_status",
+    "fix_pr_url",
+    "fix_branch",
     "created_at",
     "updated_at",
 ]
@@ -222,6 +225,46 @@ async def update_task_github_issue(
     )
 
     logger.info("Updated task %s with GitHub issue #%d", task_id, issue_number)
+    return True
+
+
+async def update_task_fix(
+    client: redis.Redis,
+    task_id: str,
+    fix_status: str,
+    fix_pr_url: str | None = None,
+    fix_branch: str | None = None,
+) -> bool:
+    """Update a task with fix status and PR information.
+
+    Args:
+        client: Redis client.
+        task_id: The task ID.
+        fix_status: Status of the fix (pending, running, completed, failed).
+        fix_pr_url: The pull request URL if created.
+        fix_branch: The branch name for the fix.
+
+    Returns:
+        True if updated, False if task not found.
+    """
+    key = f"{TASK_PREFIX}{task_id}"
+
+    if not await client.exists(key):
+        return False
+
+    mapping: dict = {
+        "fix_status": fix_status,
+        "updated_at": int(time.time()),
+    }
+
+    if fix_pr_url:
+        mapping["fix_pr_url"] = fix_pr_url
+    if fix_branch:
+        mapping["fix_branch"] = fix_branch
+
+    await client.hset(key, mapping=mapping)
+
+    logger.info("Updated task %s fix_status to %s", task_id, fix_status)
     return True
 
 

@@ -20,25 +20,69 @@ class CloneResult:
     """Result of cloning a repository."""
 
     path: Path
+    default_branch: str
     success: bool
     error: str | None = None
 
 
+def get_default_branch(repo: str) -> str:
+    """Get the default branch name for a GitHub repository.
+
+    Args:
+        repo: Repository in "owner/repo" format.
+
+    Returns:
+        Default branch name (e.g., "main", "master", "dev").
+    """
+    github_token = os.getenv("GITHUB_TOKEN")
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if github_token:
+        headers["Authorization"] = f"Bearer {github_token}"
+
+    url = f"{GITHUB_API_URL}/repos/{repo}"
+
+    try:
+        with httpx.Client() as client:
+            response = client.get(url, headers=headers, timeout=10.0)
+            if response.status_code == 200:
+                data = response.json()
+                default_branch = data.get("default_branch", "main")
+                logger.info("Default branch for %s: %s", repo, default_branch)
+                return default_branch
+            else:
+                logger.warning(
+                    "Failed to get default branch for %s: %s, falling back to 'main'",
+                    repo,
+                    response.status_code,
+                )
+                return "main"
+    except Exception as e:
+        logger.warning("Failed to get default branch for %s: %s, falling back to 'main'", repo, e)
+        return "main"
+
+
 def clone_repo(
     repo: str,
-    branch: str = "main",
+    branch: str | None = None,
     task_id: str | None = None,
 ) -> CloneResult:
     """Clone a GitHub repository to a temporary directory.
 
     Args:
         repo: Repository in "owner/repo" format.
-        branch: Branch to clone.
+        branch: Branch to clone (auto-detects default branch if None).
         task_id: Optional task ID for directory naming.
 
     Returns:
-        CloneResult with the path to the cloned repo.
+        CloneResult with the path to the cloned repo and the branch used.
     """
+    # Auto-detect default branch if not specified
+    if branch is None:
+        branch = get_default_branch(repo)
+
     # Create temp directory
     if task_id:
         temp_dir = Path(tempfile.gettempdir()) / f"beacon-{task_id}"
@@ -58,7 +102,7 @@ def clone_repo(
     else:
         clone_url = f"https://github.com/{repo}.git"
 
-    logger.info("Cloning %s to %s", repo, temp_dir)
+    logger.info("Cloning %s (branch: %s) to %s", repo, branch, temp_dir)
 
     try:
         result = subprocess.run(
@@ -70,17 +114,17 @@ def clone_repo(
 
         if result.returncode != 0:
             logger.error("Clone failed: %s", result.stderr)
-            return CloneResult(path=temp_dir, success=False, error=result.stderr)
+            return CloneResult(path=temp_dir, default_branch=branch, success=False, error=result.stderr)
 
         logger.info("Clone successful")
-        return CloneResult(path=temp_dir, success=True)
+        return CloneResult(path=temp_dir, default_branch=branch, success=True)
 
     except subprocess.TimeoutExpired:
         logger.error("Clone timed out")
-        return CloneResult(path=temp_dir, success=False, error="Clone timed out")
+        return CloneResult(path=temp_dir, default_branch=branch, success=False, error="Clone timed out")
     except Exception as e:
         logger.error("Clone failed: %s", e)
-        return CloneResult(path=temp_dir, success=False, error=str(e))
+        return CloneResult(path=temp_dir, default_branch=branch, success=False, error=str(e))
 
 
 def create_branch(repo_path: Path, branch_name: str) -> bool:
@@ -206,7 +250,7 @@ async def create_pr(
     branch: str,
     title: str,
     body: str,
-    base: str = "main",
+    base: str | None = None,
 ) -> dict | None:
     """Create a pull request on GitHub.
 
@@ -215,11 +259,15 @@ async def create_pr(
         branch: Head branch with changes.
         title: PR title.
         body: PR description.
-        base: Base branch to merge into.
+        base: Base branch to merge into (auto-detects default branch if None).
 
     Returns:
         PR data dict with 'html_url' and 'number', or None on failure.
     """
+    # Auto-detect default branch if not specified
+    if base is None:
+        base = get_default_branch(repo)
+
     github_token = os.getenv("GITHUB_TOKEN")
     if not github_token:
         logger.error("GITHUB_TOKEN not set")

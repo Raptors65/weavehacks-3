@@ -16,6 +16,7 @@ dependencies = [
     "sentence-transformers>=3.0.0",
     "stagehand>=3.5.0",
     "uvicorn[standard]>=0.40.0",
+    "weave>=0.52.25",
 ]
 
 [dependency-groups]
