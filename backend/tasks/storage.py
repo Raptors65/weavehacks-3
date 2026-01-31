@@ -18,6 +18,7 @@ CLASSIFY_QUEUE = "queue:to-classify"
 TASK_FIELDS = [
     "topic_id",
     "category",
+    "title",
     "summary",
     "severity",
     "suggested_action",
@@ -72,6 +73,7 @@ async def create_task(
         mapping={
             "topic_id": topic_id,
             "category": classification.category,
+            "title": classification.title,
             "summary": classification.summary,
             "severity": classification.severity or "",
             "suggested_action": classification.suggested_action,

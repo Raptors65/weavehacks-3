@@ -18,9 +18,10 @@ Classify the following topic (a cluster of similar user feedback) into one of th
 ## Instructions
 1. Analyze the topic and its signals
 2. Determine the most appropriate category
-3. Write a concise 1-2 sentence summary
-4. If BUG: assign severity (critical = data loss/crash, major = broken feature, minor = cosmetic)
-5. Suggest what action a developer should take
+3. Write a short title (like a GitHub issue title, max 60 chars)
+4. Write a concise 1-2 sentence summary
+5. If BUG: assign severity (critical = data loss/crash, major = broken feature, minor = cosmetic)
+6. Suggest what action a developer should take
 
 Respond with your classification."""
 
@@ -31,6 +32,10 @@ CLASSIFICATION_SCHEMA = {
             "type": "string",
             "enum": ["BUG", "FEATURE", "UX", "OTHER"],
             "description": "The classification category",
+        },
+        "title": {
+            "type": "string",
+            "description": "A short GitHub-issue-style title, max 60 characters",
         },
         "summary": {
             "type": "string",
@@ -50,7 +55,7 @@ CLASSIFICATION_SCHEMA = {
             "description": "Confidence score from 0 to 1",
         },
     },
-    "required": ["category", "summary", "severity", "suggested_action", "confidence"],
+    "required": ["category", "title", "summary", "severity", "suggested_action", "confidence"],
     "additionalProperties": False,
 }
 

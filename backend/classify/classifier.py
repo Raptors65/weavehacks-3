@@ -18,6 +18,7 @@ class ClassificationResult:
     """Result of classifying a topic."""
 
     category: Category
+    title: str
     summary: str
     severity: Severity
     suggested_action: str
@@ -72,6 +73,7 @@ class TopicClassifier:
 
             result = ClassificationResult(
                 category=response["category"],
+                title=response["title"],
                 summary=response["summary"],
                 severity=response["severity"],
                 suggested_action=response["suggested_action"],
@@ -92,6 +94,7 @@ class TopicClassifier:
             # Return a default non-actionable result on error
             return ClassificationResult(
                 category="OTHER",
+                title="Classification failed",
                 summary="Classification failed",
                 severity=None,
                 suggested_action="Manual review required",

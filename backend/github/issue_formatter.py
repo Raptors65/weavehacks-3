@@ -33,11 +33,12 @@ def format_issue_title(task: dict) -> str:
     Returns:
         Formatted issue title.
     """
-    summary = task.get("summary", "")
+    # Use the LLM-generated title if available, otherwise fall back to summary
+    title = task.get("title") or task.get("summary", "")
     # Truncate to 100 chars for GitHub title limit
-    if len(summary) > 100:
-        return summary[:97] + "..."
-    return summary
+    if len(title) > 100:
+        return title[:97] + "..."
+    return title
 
 
 def format_issue_body(task: dict, topic_id: str | None = None) -> str:
