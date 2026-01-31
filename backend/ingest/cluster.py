@@ -14,6 +14,7 @@ from redis.commands.search.query import Query
 
 from ingest.dedupe import update_signal_topic
 from redis_setup import TOPICS_INDEX
+from tasks.storage import push_to_classify_queue
 
 logger = logging.getLogger(__name__)
 
@@ -302,6 +303,9 @@ async def create_topic(
 
     # Update signal's topic_id
     await update_signal_topic(client, signal_hash, topic_id)
+
+    # Queue topic for classification
+    await push_to_classify_queue(client, topic_id)
 
     logger.info("Created new topic %s from signal %s", topic_id, signal_hash[:16])
     return topic_id

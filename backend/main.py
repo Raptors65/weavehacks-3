@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 from ingest.cluster import get_topic, list_topics
 from ingest.service import BatchIngestResult, IngestService
 from models import Signal, ScrapeConfig
+from tasks import get_task, list_tasks, update_task_status
 from redis_setup import (
     close_redis,
     get_redis,
@@ -28,16 +29,17 @@ from redis_setup import (
     init_redis,
 )
 from scrapers import RedditScraper, WebScraper
-from workers import EmbedWorker
+from workers import ClassifyWorker, EmbedWorker
 
-# Global worker reference
+# Global worker references
 _embed_worker: EmbedWorker | None = None
+_classify_worker: ClassifyWorker | None = None
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     """Application lifespan for startup/shutdown."""
-    global _embed_worker  # noqa: PLW0603
+    global _embed_worker, _classify_worker  # noqa: PLW0603
 
     # Startup
     logger.info("Starting up...")
@@ -51,10 +53,19 @@ async def lifespan(_: FastAPI):
     _embed_worker.start()
     logger.info("Embed worker started")
 
+    # Start classify worker
+    _classify_worker = ClassifyWorker(redis_client)
+    _classify_worker.start()
+    logger.info("Classify worker started")
+
     yield
 
     # Shutdown
     logger.info("Shutting down...")
+
+    if _classify_worker:
+        await _classify_worker.stop()
+        logger.info("Classify worker stopped")
 
     if _embed_worker:
         await _embed_worker.stop()
@@ -259,6 +270,110 @@ async def get_topic_by_id(topic_id: str) -> dict:
         raise HTTPException(
             status_code=500,
             detail=f"Failed to get topic: {str(e)}",
+        ) from e
+
+
+# Task endpoints
+
+
+@app.get("/tasks")
+async def get_tasks(
+    limit: int = 50,
+    status: str | None = None,
+    category: str | None = None,
+) -> list[dict]:
+    """Get all tasks (actionable topics).
+
+    Args:
+        limit: Maximum number of tasks to return.
+        status: Filter by status (open, in_progress, done).
+        category: Filter by category (BUG, FEATURE, UX).
+
+    Returns:
+        List of tasks with their metadata.
+    """
+    try:
+        redis_client = await get_redis()
+        tasks = await list_tasks(
+            redis_client,
+            status=status,
+            category=category,
+            limit=limit,
+        )
+        return tasks
+    except Exception as e:
+        logger.exception("Failed to get tasks: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get tasks: {str(e)}",
+        ) from e
+
+
+@app.get("/tasks/{task_id}")
+async def get_task_by_id(task_id: str) -> dict:
+    """Get a specific task by ID.
+
+    Args:
+        task_id: The task ID.
+
+    Returns:
+        Task metadata.
+    """
+    try:
+        redis_client = await get_redis()
+        task = await get_task(redis_client, task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        return task
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Failed to get task: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get task: {str(e)}",
+        ) from e
+
+
+class TaskStatusUpdate(BaseModel):
+    """Request to update task status."""
+
+    status: str = Field(..., description="New status (open, in_progress, done)")
+
+
+@app.patch("/tasks/{task_id}")
+async def update_task(task_id: str, update: TaskStatusUpdate) -> dict:
+    """Update a task's status.
+
+    Args:
+        task_id: The task ID.
+        update: The status update.
+
+    Returns:
+        Updated task metadata.
+    """
+    valid_statuses = ("open", "in_progress", "done")
+    if update.status not in valid_statuses:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid status. Must be one of: {valid_statuses}",
+        )
+
+    try:
+        redis_client = await get_redis()
+        updated = await update_task_status(redis_client, task_id, update.status)
+        if not updated:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        task = await get_task(redis_client, task_id)
+        return task
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Failed to update task: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to update task: {str(e)}",
         ) from e
 
 
