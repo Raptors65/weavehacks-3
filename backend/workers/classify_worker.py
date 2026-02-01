@@ -249,9 +249,9 @@ class ClassifyWorker:
             # Update status to running
             await update_task_fix(self.redis, task_id, "running")
 
-            # Clone repository
+            # Clone repository (run in thread pool to avoid blocking)
             logger.info("Auto-fix: Cloning repo %s for task %s", repo, task_id)
-            clone_result = clone_repo(repo, task_id=task_id)
+            clone_result = await asyncio.to_thread(clone_repo, repo, task_id=task_id)
 
             if not clone_result.success:
                 await update_task_fix(self.redis, task_id, "failed")
@@ -261,8 +261,9 @@ class ClassifyWorker:
             repo_path = clone_result.path
             branch_name = f"darwin/fix-{task_id}"
 
-            # Create fix branch
-            if not create_branch(repo_path, branch_name):
+            # Create fix branch (run in thread pool to avoid blocking)
+            branch_created = await asyncio.to_thread(create_branch, repo_path, branch_name)
+            if not branch_created:
                 await update_task_fix(self.redis, task_id, "failed")
                 logger.error("Auto-fix: Failed to create branch")
                 return
@@ -298,11 +299,12 @@ class ClassifyWorker:
                 logger.error("Auto-fix: Fix agent failed: %s", fix_result.error or fix_result.message)
                 return
 
-            # Commit and push
+            # Commit and push (run in thread pool to avoid blocking)
             title = task_data.get("title", "Fix issue")
             commit_message = f"fix: {title}\n\nAutomated fix by Darwin for task {task_id}"
 
-            if not commit_and_push(repo_path, commit_message, branch_name):
+            push_success = await asyncio.to_thread(commit_and_push, repo_path, commit_message, branch_name)
+            if not push_success:
                 await update_task_fix(self.redis, task_id, "failed")
                 logger.error("Auto-fix: Failed to push changes")
                 return

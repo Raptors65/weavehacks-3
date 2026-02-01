@@ -1,5 +1,6 @@
 """GitHub webhook handlers for PR feedback loop."""
 
+import asyncio
 import hashlib
 import hmac
 import logging
@@ -377,8 +378,8 @@ async def _trigger_feedback_fix(
             len(reviews_data), len(inline_data), task_id
         )
         
-        # Clone the repo and checkout the PR branch
-        clone_result = clone_repo(repo, branch=pr_branch, task_id=f"{task_id}-feedback")
+        # Clone the repo and checkout the PR branch (run in thread pool to avoid blocking)
+        clone_result = await asyncio.to_thread(clone_repo, repo, branch=pr_branch, task_id=f"{task_id}-feedback")
         
         if not clone_result.success:
             logger.error("Failed to clone repo: %s", clone_result.error)
@@ -404,10 +405,11 @@ async def _trigger_feedback_fix(
                 await redis_client.hset(task_key, "fix_status", "failed")
                 return False
             
-            # Commit and push the changes
+            # Commit and push the changes (run in thread pool to avoid blocking)
             commit_message = f"fix: address review feedback (iteration {iteration_count + 1})\n\nAutomated fix by Darwin for task {task_id}"
             
-            if not commit_and_push(repo_path, commit_message, pr_branch):
+            push_success = await asyncio.to_thread(commit_and_push, repo_path, commit_message, pr_branch)
+            if not push_success:
                 logger.error("Failed to push feedback fixes for task %s", task_id)
                 await redis_client.hset(task_key, "fix_status", "failed")
                 return False
@@ -421,8 +423,8 @@ async def _trigger_feedback_fix(
             return True
             
         finally:
-            # Clean up the cloned repo
-            cleanup_repo(repo_path)
+            # Clean up the cloned repo (run in thread pool to avoid blocking)
+            await asyncio.to_thread(cleanup_repo, repo_path)
             
     except Exception as e:
         logger.exception("Failed to trigger feedback fix for task %s: %s", task_id, e)
