@@ -88,13 +88,17 @@ FIX_AGENT_PROMPT = """You are a skilled software engineer fixing a bug or implem
 - **Summary**: {summary}
 - **Suggested Action**: {suggested_action}
 
+## Similar Past Fixes (Learn from these!)
+{similar_fixes}
+
 ## Instructions
 
-1. **Explore**: First, understand the codebase structure. Use Glob and Grep to find relevant files.
-2. **Analyze**: Read the relevant files to understand the current implementation.
-3. **Plan**: Think about the minimal changes needed to fix the issue.
-4. **Fix**: Make the necessary code changes using Edit. Keep changes focused and minimal.
-5. **Verify**: Review your changes to ensure they address the issue.
+1. **Review Past Fixes**: Look at the similar fixes above for patterns and guidance.
+2. **Explore**: Understand the codebase structure. Use Glob and Grep to find relevant files.
+3. **Analyze**: Read the relevant files to understand the current implementation.
+4. **Plan**: Think about the minimal changes needed, learning from what worked before.
+5. **Fix**: Make the necessary code changes using Edit. Keep changes focused and minimal.
+6. **Verify**: Review your changes to ensure they address the issue.
 
 ## Guidelines
 
@@ -103,6 +107,7 @@ FIX_AGENT_PROMPT = """You are a skilled software engineer fixing a bug or implem
 - Add comments if the fix is non-obvious
 - Do NOT run tests or commit - just make the file changes
 - If you're unsure about something, err on the side of making a smaller change
+- If similar fixes exist, consider following the same patterns
 
 Begin by exploring the codebase to find the relevant code for this issue.
 """
@@ -122,12 +127,14 @@ class FixResult:
 async def run_fix_agent(
     repo_path: Path,
     task: dict,
+    similar_fixes_text: str = "",
 ) -> FixResult:
     """Run the Claude Agent to fix an issue in a repository.
 
     Args:
         repo_path: Path to the cloned repository.
         task: Task data dictionary with category, title, summary, suggested_action.
+        similar_fixes_text: Pre-formatted text of similar successful fixes.
 
     Returns:
         FixResult with the outcome.
@@ -137,11 +144,16 @@ async def run_fix_agent(
     summary = task.get("summary", "")
     suggested_action = task.get("suggested_action", "")
 
+    # Use provided similar fixes or default message
+    if not similar_fixes_text:
+        similar_fixes_text = "No similar past fixes found yet. You're pioneering new territory!"
+
     prompt = FIX_AGENT_PROMPT.format(
         category=category,
         title=title,
         summary=summary,
         suggested_action=suggested_action,
+        similar_fixes=similar_fixes_text,
     )
 
     logger.info("Running fix agent for task: %s", title[:50])
@@ -182,8 +194,11 @@ async def run_fix_agent(
                                 file_path = tool_input.get("file_path", "")
                                 if file_path:
                                     # Convert to relative path if it starts with repo_path
+                                    # Use resolve() to handle macOS /var -> /private/var symlink
                                     try:
-                                        rel_path = str(Path(file_path).relative_to(repo_path))
+                                        resolved_file = Path(file_path).resolve()
+                                        resolved_repo = repo_path.resolve()
+                                        rel_path = str(resolved_file.relative_to(resolved_repo))
                                     except ValueError:
                                         # Already relative or different base
                                         rel_path = file_path

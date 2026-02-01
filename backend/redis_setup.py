@@ -14,8 +14,9 @@ logger = logging.getLogger(__name__)
 # Default Redis URL
 DEFAULT_REDIS_URL = "redis://localhost:6379"
 
-# Index name for topics
+# Index names
 TOPICS_INDEX = "idx:topics"
+SUCCESSFUL_FIXES_INDEX = "idx:successful_fixes"
 
 # Global Redis client (set during app startup)
 _redis_client: redis.Redis | None = None
@@ -98,6 +99,38 @@ async def ensure_indexes(client: redis.Redis, dimension: int = 384) -> None:
 
         await client.ft(TOPICS_INDEX).create_index(schema, definition=definition)
         logger.info("Index %s created successfully", TOPICS_INDEX)
+
+    # Ensure successful fixes index exists (for self-improvement)
+    try:
+        await client.ft(SUCCESSFUL_FIXES_INDEX).info()
+        logger.info("Index %s already exists", SUCCESSFUL_FIXES_INDEX)
+    except redis.ResponseError:
+        logger.info("Creating index %s for successful fixes", SUCCESSFUL_FIXES_INDEX)
+
+        fixes_schema = (
+            TagField("category"),
+            TextField("title"),
+            TextField("summary"),
+            TagField("product"),
+            VectorField(
+                "embedding",
+                "FLAT",
+                {
+                    "TYPE": "FLOAT32",
+                    "DIM": dimension,
+                    "DISTANCE_METRIC": "COSINE",
+                },
+            ),
+        )
+
+        fixes_definition = IndexDefinition(
+            prefix=["fix:success:"], index_type=IndexType.HASH
+        )
+
+        await client.ft(SUCCESSFUL_FIXES_INDEX).create_index(
+            fixes_schema, definition=fixes_definition
+        )
+        logger.info("Index %s created successfully", SUCCESSFUL_FIXES_INDEX)
 
 
 async def health_check() -> dict:

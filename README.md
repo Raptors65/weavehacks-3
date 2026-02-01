@@ -68,3 +68,5 @@ curl -s -X POST "http://localhost:8000/ingest" \
 ```
 - Topics (clustered signals): `curl http://localhost:8000/topics | jq`
 - Tasks (classified actionable topics): `curl http://localhost:8000/tasks | jq`
+- Create GitHub issue: `curl -X POST http://localhost:8000/tasks/{task_id}/create-issue | jq`
+- Run fix agent: `curl -X POST http://localhost:8000/tasks/{task_id}/fix | jq`
